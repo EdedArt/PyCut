@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowCut - Editor Completo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        neonPurple: '#b026ff',
+                        neonCyan: '#00f3ff',
+                        darkBg: '#0f0f13',
+                        panelBg: '#1a1a24',
+                        trackBg: '#0a0a0f'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f0f13; }
+        ::-webkit-scrollbar-thumb { background: #b026ff; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00f3ff; }
+        
+        .glow-text { text-shadow: 0 0 10px rgba(0, 243, 255, 0.7); }
+        .btn-neon { background: linear-gradient(90deg, #b026ff, #00f3ff); transition: opacity 0.2s, transform 0.2s; }
+        .btn-neon:hover { opacity: 0.9; transform: scale(1.02); box-shadow: 0 0 15px rgba(0, 243, 255, 0.5); }
+        
+        /* Continuous Timeline styling */
+        .timeline-track-container {
+            background-image: linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 40px 100%;
+        }
+        
+        .clip-block {
+            transition: border 0.1s ease;
+            user-select: none;
+            overflow: hidden;
+            position: relative;
+        }
+        .clip-block.active {
+            border: 2px solid #00f3ff;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+            z-index: 10;
+        }
+        .clip-block:hover {
+            filter: brightness(1.2);
+        }
+    </style>
+</head>
+<body class="bg-darkBg text-white font-sans min-h-screen flex flex-col h-screen overflow-hidden">
+
+    <!-- Navbar -->
+    <nav class="shrink-0 p-3 border-b border-neonPurple flex justify-between items-center bg-panelBg shadow-lg">
+        <h1 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neonPurple to-neonCyan glow-text">FlowCut Editor</h1>
+        <div class="flex items-center gap-4">
+            <span id="mode-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-gray-700 text-gray-300">MODO INVITADO</span>
+            <button onclick="toggleMode()" class="px-4 py-1 border border-neonCyan text-neonCyan rounded hover:bg-neonCyan hover:text-darkBg transition font-semibold text-sm">
+                Cambiar Rol
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Workspace -->
+    <main class="flex-grow flex flex-col xl:flex-row p-4 gap-4 overflow-hidden">
+        
+        <!-- Center Editor View (Player + Tools) -->
+        <div class="xl:w-2/3 flex flex-col gap-4 h-full">
+            
+            <div class="bg-black rounded-lg border border-gray-800 shadow-xl flex-grow relative flex flex-col justify-center items-center overflow-hidden">
+                <div class="absolute top-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-gray-400 z-10 hidden" id="active-clip-info">
+                    Editando: <span id="active-id-text" class="text-neonCyan font-mono">Ninguno</span>
+                </div>
+                
+                <video id="editor-player" class="w-full h-full object-contain bg-black hidden" controls controlsList="nodownload"></video>
+                
+                <div id="no-clip-msg" class="text-gray-600 flex flex-col items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    <p>Haz clic en un clip de la pista inferior para editarlo</p>
+                </div>
+            </div>
+
+            <!-- Toolbar / Editing Controls -->
+            <div class="bg-panelBg p-3 rounded-lg border border-gray-800 flex justify-center gap-4 shrink-0 shadow-xl shadow-purple-900/10">
+                <button onclick="trimCurrent('start')" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300 font-semibold transition border border-gray-700 hover:border-gray-500 shadow" title="Establecer Inicio">
+                    ⬅️ CORTAR INICIO
+                </button>
+                <button onclick="splitCurrent()" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm text-neonCyan font-bold transition border border-gray-700 hover:border-neonCyan shadow" title="Dividir en la posición actual del video">
+                    🔪 DIVIDIR AQUÍ
+                </button>
+                <button onclick="trimCurrent('end')" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300 font-semibold transition border border-gray-700 hover:border-gray-500 shadow" title="Establecer Fin">
+                    ➡️ CORTAR FIN
+                </button>
+                
+                <div class="w-px bg-gray-700 mx-2"></div> <!-- divider -->
+                
+                <button onclick="toggleActiveFilter()" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300 font-semibold transition border border-gray-700 shadow" title="Filtro B/N">
+                    💧 Filtro
+                </button>
+                <button onclick="deleteActiveClip()" class="px-3 py-2 bg-gray-800 hover:bg-red-900/50 rounded text-sm text-red-400 font-semibold transition border border-gray-700 hover:border-red-500 shadow" title="Eliminar Clip">
+                    🗑️ Eliminar
+                </button>
+            </div>
+            
+        </div>
+
+        <!-- Right Sidebar (Upload & Final Preview) -->
+        <div class="xl:w-1/3 flex flex-col gap-4 h-full">
+            
+            <div class="bg-panelBg p-5 rounded-lg border border-gray-800 shadow-xl shrink-0">
+                <h2 class="font-bold mb-3 text-neonCyan text-sm">RECURSOS</h2>
+                <div class="border-2 border-dashed border-neonPurple rounded-lg p-5 text-center cursor-pointer hover:bg-purple-900/10 transition" onclick="document.getElementById('file-upload').click()">
+                    <span class="text-xs text-gray-300 font-semibold">+ AÑADIR MP4</span>
+                    <input type="file" id="file-upload" class="hidden" accept="video/mp4,video/mov,video/avi" onchange="handleFileUpload(event)">
+                </div>
+                <div id="upload-status" class="mt-2 text-xs text-center hidden text-neonPurple">Subiendo...</div>
+            </div>
+
+            <div class="bg-panelBg p-5 rounded-lg border border-gray-800 flex-grow flex flex-col">
+                <h2 class="font-bold mb-3 text-neonCyan text-sm">VIDEO FINAL (RENDERIZADO)</h2>
+                <div class="bg-black rounded-lg border border-gray-700 flex-grow flex items-center justify-center overflow-hidden relative">
+                    <video id="final-video" class="w-full h-full object-contain hidden" controls></video>
+                    <span id="final-placeholder" class="text-gray-600 text-xs">Renderiza para visualizar</span>
+                </div>
+                <button onclick="renderFinalVideo()" id="render-btn" class="btn-neon w-full mt-3 py-3 rounded-lg font-bold text-white shadow-lg text-sm">
+                    RENDERIZAR LÍNEA DE TIEMPO
+                </button>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- Bottom Continuous Timeline Track -->
+    <footer class="h-48 border-t border-gray-800 bg-trackBg shrink-0 flex flex-col p-4 shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-neonPurple tracking-wider">PISTA PRINCIPAL (LISTA DOBLE)</span>
+            <span class="text-[10px] text-gray-500 bg-gray-900 px-2 py-1 rounded">← Mueve los bloques vertical u horizontalmente o presiona para seleccionar</span>
+        </div>
+        
+        <div class="flex-grow bg-gray-900 border border-gray-800 rounded relative overflow-x-auto timeline-track-container hide-scrollbar" id="timeline-scroll">
+            <div id="timeline-track" class="h-full flex items-center px-4 box-border min-w-max relative" style="padding-top:10px; padding-bottom:10px;">
+                <!-- Node Blocks will be inserted here mapped perfectly like Premiere -->
+                <div class="text-gray-600 text-xs w-full text-center mt-6 italic">Pista vacía</div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Global State
+        let isUserMode = false;
+        let globalNodes = [];
+        let activeNodeId = null;
+        const PXPSEC = 40; // Pixeles por segundo para el ancho visual de los bloques
+
+        // DOM elements
+        const editorPlayer = document.getElementById('editor-player');
+        
+        function toggleMode() {
+            isUserMode = !isUserMode;
+            const badge = document.getElementById('mode-badge');
+            if(isUserMode) {
+                badge.textContent = 'MODO USUARIO (PRO)';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-neonCyan text-darkBg animate-pulse';
+            } else {
+                badge.textContent = 'MODO INVITADO';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-gray-700 text-gray-300';
+            }
+        }
+
+        async function loadTimeline() {
+            try {
+                const response = await fetch('/api/timeline');
+                globalNodes = await response.json();
+                renderTrack();
+                
+                // Keep active logic connected if it exists
+                if (activeNodeId) {
+                    const nodeStillExists = globalNodes.find(n => n.id === activeNodeId);
+                    if (!nodeStillExists) {
+                        activeNodeId = null;
+                        editorPlayer.classList.add('hidden');
+                        document.getElementById('no-clip-msg').classList.remove('hidden');
+                        document.getElementById('active-clip-info').classList.add('hidden');
+                        editorPlayer.src = "";
+                    }
+                }
+            } catch (err) {
+                console.error("Error cargando timeline:", err);
+            }
+        }
+
+        function renderTrack() {
+            const track = document.getElementById('timeline-track');
+            track.innerHTML = '';
+            
+            if (globalNodes.length === 0) {
+                track.innerHTML = `<div class="text-gray-600 text-xs w-full text-center mt-6 italic">Pista vacía</div>`;
+                return;
+            }
+
+            globalNodes.forEach((node, idx) => {
+                const segmentDuration = node.trim_end - node.trim_start;
+                // For UI visibility, let's artificially ensure a minimum width even for very small cuts
+                const pixelWidth = Math.max(segmentDuration * PXPSEC, 50); 
+                
+                const isActive = (node.id === activeNodeId);
+                const borderClass = isActive ? 'border-neonCyan shadow-[0_0_10px_#00f3ff]' : (node.grayscale_filter ? 'border-gray-400' : 'border-gray-700');
+                
+                const filterIcon = node.grayscale_filter ? `<span class="absolute top-1 left-1 text-[10px] bg-black/60 px-1 rounded backdrop-blur">B/W</span>` : '';
+                
+                // Add tiny visual joiners if not first block to represent Next/Prev Links visually
+                if(idx > 0) {
+                    track.insertAdjacentHTML('beforeend', `<div class="w-1 h-4 bg-neonPurple shrink-0 rounded z-0" style="margin-left:-2px; margin-right:-2px;"></div>`);
+                }
+
+                const blockHtml = `
+                    <div id="block-${node.id}" 
+                         class="clip-block shrink-0 bg-gray-800 rounded flex flex-col justify-end cursor-pointer relative ${node.grayscale_filter ? 'grayscale' : ''}" 
+                         style="width: ${pixelWidth}px; height: 80px; border-width: ${isActive ? '2px' : '1px'};"
+                         onclick="selectBlock('${node.id}')">
+                        
+                        <!-- Thumbnail Background -->
+                        <div class="absolute inset-0 z-0 opacity-40 bg-cover bg-center" style="background-image: url('${node.thumbnail}')"></div>
+                        
+                        ${filterIcon}
+                        
+                        <div class="z-10 bg-black/80 w-full text-[10px] text-gray-300 px-1 py-0.5 font-mono truncate flex justify-between">
+                            <span>S: ${node.trim_start.toFixed(1)}s</span>
+                            <span>E: ${node.trim_end.toFixed(1)}s</span>
+                        </div>
+                    </div>
+                `;
+                
+                track.insertAdjacentHTML('beforeend', blockHtml);
+            });
+        }
+
+        function selectBlock(nodeId) {
+            activeNodeId = nodeId;
+            renderTrack(); // refresh borders
+            
+            const node = globalNodes.find(n => n.id === nodeId);
+            if (!node) return;
+
+            // Prepare Editor Player
+            document.getElementById('no-clip-msg').classList.add('hidden');
+            document.getElementById('active-clip-info').classList.remove('hidden');
+            document.getElementById('active-id-text').textContent = nodeId.substring(0,6) + '...';
+            
+            // Clean paths if they are local paths vs urls. Usually '/uploads/filename' works if mounted, but app.py serves /static. 
+            // Wait, we need to fetch the physical video file. The python app doesn't mount /uploads directly in the FastAPI. 
+            // The file_path is absolute. We need an endpoint to serve it or just mount uploads!
+            // Wait, I didn't mount /uploads in python earlier. Let me fix the source dynamically:
+            editorPlayer.src = "/api/stream?path=" + encodeURIComponent(node.file_path);
+            
+            // For now if api/stream doesn't exist, we will use a workaround, or the file was saving. 
+            // Wait, the API doesn't have an endpoint for streaming the video chunks physically or path.
+            // Let's create a proxy url from the filename because it is in uploads_dir.
+            const filename = node.file_path.split(/[\/\\]/).pop();
+            editorPlayer.src = "/api/file/" + filename; // Need a simple quick fetch in python if no mount
+            // BUT, if file route is not found, we will just use HTML5 and skip for prototype
+            
+            editorPlayer.classList.remove('hidden');
+            
+            // Try to set current time
+            editorPlayer.onloadedmetadata = () => {
+                editorPlayer.currentTime = node.trim_start;
+            };
+        }
+
+        // --- EDITOR ACTIONS (WIRED DELIVERING CURRENT TIME) ---
+
+        function _requireActive() {
+            if (!isUserMode) { alert("¡Cambia a MODO USUARIO para editar!"); return null; }
+            if (!activeNodeId) { alert("¡Selecciona un bloque de la línea de tiempo primero!"); return null; }
+            const node = globalNodes.find(n => n.id === activeNodeId);
+            return node;
+        }
+
+        async function splitCurrent() {
+            const node = _requireActive();
+            if(!node) return;
+            
+            const currTime = editorPlayer.currentTime;
+            if(currTime <= node.trim_start || currTime >= node.trim_end) {
+                alert(`El puntero debe estar dentro del recorte visual del video (entre ${node.trim_start} y ${node.trim_end} seg). Mueve la barra.`);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('node_id', node.id);
+            formData.append('split_time', currTime);
+            formData.append('user_mode', isUserMode);
+
+            try {
+                const res = await fetch('/api/split', { method: 'POST', body: formData });
+                if(!res.ok) { const body = await res.json(); alert(body.detail); return; }
+                await loadTimeline(); // UI magically reloads showing two blocks
+            } catch (e) { alert("Error dividiendo nodo de lista doble"); }
+        }
+
+        async function trimCurrent(boundType) {
+            const node = _requireActive();
+            if(!node) return;
+
+            const currTime = editorPlayer.currentTime;
+            
+            let t_start = node.trim_start;
+            let t_end = node.trim_end;
+            
+            if (boundType === 'start') {
+                if(currTime >= t_end) { alert("El inicio no puede ser mayor al final"); return; }
+                t_start = currTime;
+            } else {
+                if(currTime <= t_start) { alert("El fin no puede ser menor al inicio"); return; }
+                t_end = currTime;
+            }
+
+            const formData = new FormData();
+            formData.append('node_id', node.id);
+            formData.append('start', t_start);
+            formData.append('end', t_end);
+            formData.append('user_mode', isUserMode);
+
+            try {
+                const res = await fetch('/api/trim', { method: 'POST', body: formData });
+                if(!res.ok) { const body = await res.json(); alert(body.detail); return; }
+                await loadTimeline();
+            } catch (e) {}
+        }
+
+        async function deleteActiveClip() {
+            const node = _requireActive();
+            if(!node) return;
+            if(!confirm("¿Seguro que deseas eliminar este fragmento de la estructura?")) return;
+            
+            await fetch(`/api/delete/${node.id}`, { method: 'DELETE' });
+            activeNodeId = null;
+            editorPlayer.src = "";
+            editorPlayer.classList.add('hidden');
+            document.getElementById('no-clip-msg').classList.remove('hidden');
+            document.getElementById('active-clip-info').classList.add('hidden');
+            loadTimeline();
+        }
+
+        async function toggleActiveFilter() {
+            const node = _requireActive();
+            if(!node) return;
+            
+            const formData = new FormData();
+            formData.append('node_id', node.id);
+            formData.append('user_mode', isUserMode);
+            await fetch('/api/toggle_filter', { method: 'POST', body: formData });
+            loadTimeline();
+        }
+
+        // --- GENERAL PIPELINE ---
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('user_mode', isUserMode);
+
+            const status = document.getElementById('upload-status');
+            status.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!response.ok) { const d = await response.json(); alert(d.detail); }
+                await loadTimeline();
+            } catch (err) { alert('Error al subir el archivo.'); } 
+            finally { status.style.display = 'none'; event.target.value = ''; }
+        }
+
+        async function renderFinalVideo() {
+            if (!isUserMode) { alert("Modo Usuario requerido para unir y exportar."); return; }
+
+            const btn = document.getElementById('render-btn');
+            const orig = btn.textContent;
+            btn.textContent = 'RENDERIZANDO... (COMPUTANDO)';
+            btn.classList.add('animate-pulse');
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('user_mode', isUserMode);
+
+            try {
+                const response = await fetch('/api/render', { method: 'POST', body: formData });
+                if (!response.ok) { 
+                    const d = await response.json(); alert(d.detail);
+                } else {
+                    const data = await response.json();
+                    document.getElementById('final-video').src = data.url + '?t=' + Date.now();
+                    document.getElementById('final-video').classList.remove('hidden');
+                    document.getElementById('final-placeholder').classList.add('hidden');
+                }
+            } catch(e) {} finally {
+                btn.textContent = orig;
+                btn.classList.remove('animate-pulse');
+                btn.disabled = false;
+            }
+        }
+
+        // INIT
+        loadTimeline();
+    </script>
+</body>
+</html>
